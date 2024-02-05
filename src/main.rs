@@ -13,7 +13,7 @@ use core::iter::once;
 use embedded_hal::timer::CountDown;
 use fugit::ExtU32;
 use panic_halt as _;
-use smart_leds::{brightness, RGB8};
+use smart_leds::{brightness, SmartLedsWrite, RGB8};
 use waveshare_rp2040_zero::entry;
 use waveshare_rp2040_zero::{
     hal::{
@@ -27,8 +27,6 @@ use waveshare_rp2040_zero::{
     Pins, XOSC_CRYSTAL_FREQ,
 };
 use ws2812_pio::Ws2812;
-use smart_leds_trait::SmartLedsWrite;
-
 
 #[entry]
 fn main() -> ! {
@@ -45,8 +43,8 @@ fn main() -> ! {
         &mut pac.RESETS,
         &mut watchdog,
     )
-        .ok()
-        .unwrap();
+    .ok()
+    .unwrap();
 
     let sio = Sio::new(pac.SIO);
     let pins = Pins::new(
