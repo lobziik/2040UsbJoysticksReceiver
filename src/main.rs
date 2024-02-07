@@ -13,29 +13,36 @@ use core::iter::once;
 use embedded_hal::timer::CountDown;
 use fugit::ExtU32;
 use panic_halt as _;
-use smart_leds::{brightness, SmartLedsWrite, RGB8};
-use waveshare_rp2040_zero::entry;
-use waveshare_rp2040_zero::{
-    hal::{
-        clocks::{init_clocks_and_plls, Clock},
-        pac,
-        pio::PIOExt,
-        timer::Timer,
-        watchdog::Watchdog,
-        Sio,
-    },
-    Pins, XOSC_CRYSTAL_FREQ,
-};
+
+use waveshare_rp2040_zero as bsp;
+use bsp::hal::pio::PIOExt;
+use bsp::hal::clocks::Clock;
+use bsp::entry;
+
+// USB Device support
+use usb_device::{class_prelude::UsbBusAllocator, prelude::*};
+// USB Communications Class Device support
+// SerialPort over usb
+use usbd_serial::SerialPort;
+
+// Used to demonstrate writing formatted strings
+use core::fmt::Write;
+use heapless::String;
+
+// Onboard rgb LED
+use smart_leds::{brightness, SmartLedsWrite};
 use ws2812_pio::Ws2812;
+
+mod rgb_wheel;
 
 #[entry]
 fn main() -> ! {
-    let mut pac = pac::Peripherals::take().unwrap();
+    let mut pac = bsp::pac::Peripherals::take().unwrap();
 
-    let mut watchdog = Watchdog::new(pac.WATCHDOG);
+    let mut watchdog = bsp::hal::watchdog::Watchdog::new(pac.WATCHDOG);
 
-    let clocks = init_clocks_and_plls(
-        XOSC_CRYSTAL_FREQ,
+    let clocks = bsp::hal::clocks::init_clocks_and_plls(
+        bsp::XOSC_CRYSTAL_FREQ,
         pac.XOSC,
         pac.CLOCKS,
         pac.PLL_SYS,
@@ -46,16 +53,36 @@ fn main() -> ! {
     .ok()
     .unwrap();
 
-    let sio = Sio::new(pac.SIO);
-    let pins = Pins::new(
+    let timer = bsp::hal::Timer::new(pac.TIMER, &mut pac.RESETS, &clocks);
+    let mut delay = timer.count_down();
+
+    let sio = bsp::hal::Sio::new(pac.SIO);
+    let pins = bsp::Pins::new(
         pac.IO_BANK0,
         pac.PADS_BANK0,
         sio.gpio_bank0,
         &mut pac.RESETS,
     );
 
-    let timer = Timer::new(pac.TIMER, &mut pac.RESETS, &clocks);
-    let mut delay = timer.count_down();
+    // Set up the USB driver
+    let usb_bus = UsbBusAllocator::new(bsp::hal::usb::UsbBus::new(
+        pac.USBCTRL_REGS,
+        pac.USBCTRL_DPRAM,
+        clocks.usb_clock,
+        true,
+        &mut pac.RESETS,
+    ));
+
+    // Create a USB device with a fake VID and PID
+    let mut _usb_dev = UsbDeviceBuilder::new(&usb_bus, UsbVidPid(0x16c0, 0x27dd))
+        .manufacturer("Fake company")
+        .product("Serial port")
+        .serial_number("TEST")
+        .device_class(2) // from: https://www.usb.org/defined-class-codes
+        .build();
+
+    // Set up the USB Communications Class Device driver
+    let mut serial = SerialPort::new(&usb_bus);
 
     // Configure the addressable LED
     let (mut pio, sm0, _, _, _) = pac.PIO0.split(&mut pac.RESETS);
@@ -71,29 +98,16 @@ fn main() -> ! {
     // Infinite colour wheel loop
     let mut n: u8 = 128;
     loop {
-        ws.write(brightness(once(wheel(n)), 32)).unwrap();
+        ws.write(brightness(once(rgb_wheel::wheel(n)), 32)).unwrap();
         n = n.wrapping_add(1);
 
-        delay.start(25.millis());
-        let _ = nb::block!(delay.wait());
-    }
-}
+        // let mut text: String<64> = String::new();
+        // writeln!(&mut text, "Current wheel value: {}", n).unwrap();
+        // let _ = serial.write(text.as_bytes());
 
-/// Convert a number from `0..=255` to an RGB color triplet.
-///
-/// The colours are a transition from red, to green, to blue and back to red.
-fn wheel(mut wheel_pos: u8) -> RGB8 {
-    wheel_pos = 255 - wheel_pos;
-    if wheel_pos < 85 {
-        // No green in this sector - red and blue only
-        (255 - (wheel_pos * 3), 0, wheel_pos * 3).into()
-    } else if wheel_pos < 170 {
-        // No red in this sector - green and blue only
-        wheel_pos -= 85;
-        (0, wheel_pos * 3, 255 - (wheel_pos * 3)).into()
-    } else {
-        // No blue in this sector - red and green only
-        wheel_pos -= 170;
-        (wheel_pos * 3, 255 - (wheel_pos * 3), 0).into()
+        let _ = _usb_dev.poll(&mut [&mut serial]);
+
+        delay.start(10.millis());
+        let _ = nb::block!(delay.wait());
     }
 }
