@@ -1,47 +1,63 @@
-//! Rainbow effect color wheel using the onboard NeoPixel on an Waveshare RP2040 Zero board
+//! # Pico USB Serial Example
 //!
-//! This flows smoothly through various colors on the onboard NeoPixel.
-//! Uses the `ws2812_pio` driver to control the NeoPixel, which in turns uses the
-//! RP2040's PIO block.
+//! Creates a USB Serial device on a Pico board, with the USB driver running in
+//! the main thread.
 //!
-//! Copypasted from https://github.com/rp-rs/rp-hal-boards/blob/main/boards/waveshare-rp2040-zero/examples/waveshare_rp2040_zero_neopixel_rainbow.rs
-//! for experimentation purposes
+//! This will create a USB Serial device echoing anything it receives. Incoming
+//! ASCII characters are converted to upercase, so you can tell it is working
+//! and not just local-echo!
+//!
+//! See the `Cargo.toml` file for Copyright and license details.
+
 #![no_std]
 #![no_main]
 
-use core::iter::once;
-use embedded_hal::timer::CountDown;
-use fugit::ExtU32;
-use panic_halt as _;
+use rp_pico as bsp;
 
-use waveshare_rp2040_zero as bsp;
-use bsp::hal::pio::PIOExt;
-use bsp::hal::clocks::Clock;
+// The macro for our start-up function
 use bsp::entry;
 
+// Ensure we halt the program on panic (if we don't mention this crate it won't
+// be linked)
+use panic_halt as _;
+
+// A shorter alias for the Peripheral Access Crate, which provides low-level
+// register access
+use bsp::hal::pac;
+
+// A shorter alias for the Hardware Abstraction Layer, which provides
+// higher-level drivers.
+use bsp::hal;
+
 // USB Device support
-use usb_device::{class_prelude::UsbBusAllocator, prelude::*};
+use usb_device::{class_prelude::*, prelude::*};
+
 // USB Communications Class Device support
-// SerialPort over usb
 use usbd_serial::SerialPort;
 
 // Used to demonstrate writing formatted strings
 use core::fmt::Write;
 use heapless::String;
 
-// Onboard rgb LED
-use smart_leds::{brightness, SmartLedsWrite};
-use ws2812_pio::Ws2812;
-
-mod rgb_wheel;
-
+/// Entry point to our bare-metal application.
+///
+/// The `#[entry]` macro ensures the Cortex-M start-up code calls this function
+/// as soon as all global variables are initialised.
+///
+/// The function configures the RP2040 peripherals, then echoes any characters
+/// received over USB Serial.
 #[entry]
 fn main() -> ! {
-    let mut pac = bsp::pac::Peripherals::take().unwrap();
+    // Grab our singleton objects
+    let mut pac = pac::Peripherals::take().unwrap();
 
-    let mut watchdog = bsp::hal::watchdog::Watchdog::new(pac.WATCHDOG);
+    // Set up the watchdog driver - needed by the clock setup code
+    let mut watchdog = hal::Watchdog::new(pac.WATCHDOG);
 
-    let clocks = bsp::hal::clocks::init_clocks_and_plls(
+    // Configure the clocks
+    //
+    // The default is to generate a 125 MHz system clock
+    let clocks = hal::clocks::init_clocks_and_plls(
         bsp::XOSC_CRYSTAL_FREQ,
         pac.XOSC,
         pac.CLOCKS,
@@ -53,8 +69,7 @@ fn main() -> ! {
     .ok()
     .unwrap();
 
-    let timer = bsp::hal::Timer::new(pac.TIMER, &mut pac.RESETS, &clocks);
-    let mut delay = timer.count_down();
+    let timer: hal::Timer = hal::Timer::new(pac.TIMER, &mut pac.RESETS);
 
     let sio = bsp::hal::Sio::new(pac.SIO);
     let pins = bsp::Pins::new(
@@ -65,7 +80,7 @@ fn main() -> ! {
     );
 
     // Set up the USB driver
-    let usb_bus = UsbBusAllocator::new(bsp::hal::usb::UsbBus::new(
+    let usb_bus = UsbBusAllocator::new(hal::usb::UsbBus::new(
         pac.USBCTRL_REGS,
         pac.USBCTRL_DPRAM,
         clocks.usb_clock,
@@ -73,41 +88,65 @@ fn main() -> ! {
         &mut pac.RESETS,
     ));
 
-    // Create a USB device with a fake VID and PID
-    let mut _usb_dev = UsbDeviceBuilder::new(&usb_bus, UsbVidPid(0x16c0, 0x27dd))
-        .manufacturer("Fake company")
-        .product("Serial port")
-        .serial_number("TEST")
-        .device_class(2) // from: https://www.usb.org/defined-class-codes
-        .build();
-
     // Set up the USB Communications Class Device driver
     let mut serial = SerialPort::new(&usb_bus);
 
-    // Configure the addressable LED
-    let (mut pio, sm0, _, _, _) = pac.PIO0.split(&mut pac.RESETS);
-    let mut ws = Ws2812::new(
-        // The onboard NeoPixel is attached to GPIO pin #16 on the Feather RP2040.
-        pins.neopixel.into_function(),
-        &mut pio,
-        sm0,
-        clocks.peripheral_clock.freq(),
-        timer.count_down(),
-    );
+    // Create a USB device with a fake VID and PID
+    let mut usb_dev = UsbDeviceBuilder::new(&usb_bus, UsbVidPid(0x16c0, 0x27dd))
+        .manufacturer("Kachna Malir")
+        .product("Serial port")
+        .serial_number("FOOFOOFOO")
+        .device_class(2) // from: https://www.usb.org/defined-class-codes
+        .build();
 
-    // Infinite colour wheel loop
-    let mut n: u8 = 128;
+    let mut said_hello = false;
     loop {
-        ws.write(brightness(once(rgb_wheel::wheel(n)), 32)).unwrap();
-        n = n.wrapping_add(1);
+        // A welcome message at the beginning
+        if !said_hello && timer.get_counter().ticks() >= 2_000_000 {
+            said_hello = true;
+            let _ = serial.write(b"Hello, World!\r\n");
 
-        // let mut text: String<64> = String::new();
-        // writeln!(&mut text, "Current wheel value: {}", n).unwrap();
-        // let _ = serial.write(text.as_bytes());
+            let time = timer.get_counter().ticks();
+            let mut text: String<64> = String::new();
+            writeln!(&mut text, "Current timer ticks: {}", time).unwrap();
 
-        let _ = _usb_dev.poll(&mut [&mut serial]);
+            // This only works reliably because the number of bytes written to
+            // the serial port is smaller than the buffers available to the USB
+            // peripheral. In general, the return value should be handled, so that
+            // bytes not transferred yet don't get lost.
+            let _ = serial.write(text.as_bytes());
+        }
 
-        delay.start(10.millis());
-        let _ = nb::block!(delay.wait());
+        // Check for new data
+        if usb_dev.poll(&mut [&mut serial]) {
+            let mut buf = [0u8; 64];
+            match serial.read(&mut buf) {
+                Err(_e) => {
+                    // Do nothing
+                }
+                Ok(0) => {
+                    // Do nothing
+                }
+                Ok(count) => {
+                    // Convert to upper case
+                    buf.iter_mut().take(count).for_each(|b| {
+                        b.make_ascii_uppercase();
+                    });
+                    // Send back to the host
+                    let mut wr_ptr = &buf[..count];
+                    while !wr_ptr.is_empty() {
+                        match serial.write(wr_ptr) {
+                            Ok(len) => wr_ptr = &wr_ptr[len..],
+                            // On error, just drop unwritten data.
+                            // One possible error is Err(WouldBlock), meaning the USB
+                            // write buffer is full.
+                            Err(_) => break,
+                        };
+                    }
+                }
+            }
+        }
     }
 }
+
+// End of file
