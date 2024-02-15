@@ -1,3 +1,6 @@
+[workspace]
+members = ["usdb-joystic-hid-descriptor"]
+
 [package]
 edition = "2021"
 name = "p2040_xn297_receiver"
@@ -15,6 +18,7 @@ heapless = "0.8.0"
 fugit = "0.3.7"
 nb = "1.1.0"
 panic-halt = "0.2.0"
+critical-section = "1.1.2"
 
 # BSP
 rp-pico = { features = ["default", "rp2040-e5"], version = "0.7.0" }
@@ -24,9 +28,10 @@ waveshare-rp2040-zero = { features = [
 ], version = "0.7.0" }
 
 # USB
-usb-device = "0.2.9"
-usbd-hid = "0.7.0"
+usb-device = { version = "0.2.9", features = ["defmt"] }
+usbd-hid = "0.6.1"
 usbd-serial = "0.1.1"
+usdb-joystic-hid-descriptor = {path = "usdb-joystic-hid-descriptor"}
 
 # For build the example
 # https://github.com/rp-rs/rp-hal-boards/blob/main/boards/waveshare-rp2040-zero/examples/waveshare_rp2040_zero_neopixel_rainbow.rs

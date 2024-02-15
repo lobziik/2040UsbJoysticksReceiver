@@ -1,25 +1,35 @@
-//! # Pico USB Serial Example
+//! # Pico USB 'Twitchy' Mouse Example
 //!
-//! Creates a USB Serial device on a Pico board, with the USB driver running in
-//! the main thread.
+//! Creates a USB HID Class Pointing device (i.e. a virtual mouse) on a Pico
+//! board, with the USB driver running in the main thread.
 //!
-//! This will create a USB Serial device echoing anything it receives. Incoming
-//! ASCII characters are converted to upercase, so you can tell it is working
-//! and not just local-echo!
+//! It generates movement reports which will twitch the cursor up and down by a
+//! few pixels, several times a second.
 //!
 //! See the `Cargo.toml` file for Copyright and license details.
+//!
+//! This is a port of
+//! https://github.com/atsamd-rs/atsamd/blob/master/boards/itsybitsy_m0/examples/twitching_usb_mouse.rs
 
 #![no_std]
 #![no_main]
 
 use rp_pico as bsp;
 
+use defmt_rtt as _; // global logger
+
 // The macro for our start-up function
 use bsp::entry;
+
+// The macro for marking our interrupt functions
+use bsp::hal::pac::interrupt;
 
 // Ensure we halt the program on panic (if we don't mention this crate it won't
 // be linked)
 use panic_halt as _;
+
+// Pull in any important traits
+use bsp::hal::prelude::*;
 
 // A shorter alias for the Peripheral Access Crate, which provides low-level
 // register access
@@ -31,21 +41,34 @@ use bsp::hal;
 
 // USB Device support
 use usb_device::{class_prelude::*, prelude::*};
+use usbd_hid::descriptor::SerializedDescriptor;
+use usbd_hid::hid_class::HIDClass;
 
-// USB Communications Class Device support
-use usbd_serial::SerialPort;
+use usdb_joystic_hid_descriptor::JoystickReport;
 
-// Used to demonstrate writing formatted strings
-use core::fmt::Write;
-use heapless::String;
+/// The USB Device Driver (shared with the interrupt).
+static mut USB_DEVICE: Option<UsbDevice<hal::usb::UsbBus>> = None;
+
+/// The USB Bus Driver (shared with the interrupt).
+static mut USB_BUS: Option<UsbBusAllocator<hal::usb::UsbBus>> = None;
+
+/// The USB Human Interface Device Driver (shared with the interrupt).
+static mut USB_HID_JOY_P1: Option<HIDClass<hal::usb::UsbBus>> = None;
+/// The USB Human Interface Device Driver (shared with the interrupt).
+static mut USB_HID_JOY_P2: Option<HIDClass<hal::usb::UsbBus>> = None;
+
+enum Player {
+    One,
+    Two,
+}
 
 /// Entry point to our bare-metal application.
 ///
 /// The `#[entry]` macro ensures the Cortex-M start-up code calls this function
 /// as soon as all global variables are initialised.
 ///
-/// The function configures the RP2040 peripherals, then echoes any characters
-/// received over USB Serial.
+/// The function configures the RP2040 peripherals, then submits cursor movement
+/// updates periodically.
 #[entry]
 fn main() -> ! {
     // Grab our singleton objects
@@ -69,15 +92,15 @@ fn main() -> ! {
     .ok()
     .unwrap();
 
-    let timer: hal::Timer = hal::Timer::new(pac.TIMER, &mut pac.RESETS);
-
-    let sio = bsp::hal::Sio::new(pac.SIO);
-    let pins = bsp::Pins::new(
-        pac.IO_BANK0,
-        pac.PADS_BANK0,
-        sio.gpio_bank0,
-        &mut pac.RESETS,
-    );
+    {
+        let sio = hal::Sio::new(pac.SIO);
+        let _pins = rp_pico::Pins::new(
+            pac.IO_BANK0,
+            pac.PADS_BANK0,
+            sio.gpio_bank0,
+            &mut pac.RESETS,
+        );
+    }
 
     // Set up the USB driver
     let usb_bus = UsbBusAllocator::new(hal::usb::UsbBus::new(
@@ -88,65 +111,86 @@ fn main() -> ! {
         &mut pac.RESETS,
     ));
 
-    // Set up the USB Communications Class Device driver
-    let mut serial = SerialPort::new(&usb_bus);
+    unsafe {
+        // Note (safety): This is safe as interrupts haven't been started yet
+        USB_BUS = Some(usb_bus);
+    }
 
-    // Create a USB device with a fake VID and PID
-    let mut usb_dev = UsbDeviceBuilder::new(&usb_bus, UsbVidPid(0x16c0, 0x27dd))
-        .manufacturer("Kachna Malir")
-        .product("Serial port")
-        .serial_number("FOOFOOFOO")
-        .device_class(2) // from: https://www.usb.org/defined-class-codes
+    // Grab a reference to the USB Bus allocator. We are promising to the
+    // compiler not to take mutable access to this global variable whilst this
+    // reference exists!
+    let bus_ref = unsafe { USB_BUS.as_ref().unwrap() };
+
+    // // Set up the USB HID Class Device driver, providing Mouse Reports
+    let usb_hid_j1 = HIDClass::new(bus_ref, JoystickReport::desc(), 20);
+    let usb_hid_j2 = HIDClass::new(bus_ref, JoystickReport::desc(), 20);
+    unsafe {
+        // Note (safety): This is safe as interrupts haven't been started yet.
+        USB_HID_JOY_P1 = Some(usb_hid_j1);
+        USB_HID_JOY_P2 = Some(usb_hid_j2);
+    }
+    //
+    // // Create a USB device with a fake VID and PID
+    let usb_dev = UsbDeviceBuilder::new(bus_ref, UsbVidPid(0x16c0, 0x27da))
+        .manufacturer("Kachnamalir")
+        .product("Rusty radio joysticks")
+        .serial_number("one-of-a-kind-pico")
+        .device_class(0)
+        .composite_with_iads()
         .build();
 
-    let mut said_hello = false;
+    unsafe {
+        // Note (safety): This is safe as interrupts haven't been started yet
+        USB_DEVICE = Some(usb_dev);
+    }
+
+    unsafe {
+        // Enable the USB interrupt
+        pac::NVIC::unmask(hal::pac::Interrupt::USBCTRL_IRQ);
+    };
+    let core = pac::CorePeripherals::take().unwrap();
+    let mut delay = cortex_m::delay::Delay::new(core.SYST, clocks.system_clock.freq().to_Hz());
+
+    // Move the cursor up and down every 200ms
     loop {
-        // A welcome message at the beginning
-        if !said_hello && timer.get_counter().ticks() >= 2_000_000 {
-            said_hello = true;
-            let _ = serial.write(b"Hello, World!\r\n");
-
-            let time = timer.get_counter().ticks();
-            let mut text: String<64> = String::new();
-            writeln!(&mut text, "Current timer ticks: {}", time).unwrap();
-
-            // This only works reliably because the number of bytes written to
-            // the serial port is smaller than the buffers available to the USB
-            // peripheral. In general, the return value should be handled, so that
-            // bytes not transferred yet don't get lost.
-            let _ = serial.write(text.as_bytes());
-        }
-
-        // Check for new data
-        if usb_dev.poll(&mut [&mut serial]) {
-            let mut buf = [0u8; 64];
-            match serial.read(&mut buf) {
-                Err(_e) => {
-                    // Do nothing
-                }
-                Ok(0) => {
-                    // Do nothing
-                }
-                Ok(count) => {
-                    // Convert to upper case
-                    buf.iter_mut().take(count).for_each(|b| {
-                        b.make_ascii_uppercase();
-                    });
-                    // Send back to the host
-                    let mut wr_ptr = &buf[..count];
-                    while !wr_ptr.is_empty() {
-                        match serial.write(wr_ptr) {
-                            Ok(len) => wr_ptr = &wr_ptr[len..],
-                            // On error, just drop unwritten data.
-                            // One possible error is Err(WouldBlock), meaning the USB
-                            // write buffer is full.
-                            Err(_) => break,
-                        };
-                    }
-                }
+        delay.delay_ms(1000);
+        let report = JoystickReport {
+            x: 0,
+            y: 0,
+            buttons: 1,
+        };
+        let _ = match push_joystick_report(report, Player::One) {
+            Ok(_) => {
+                defmt::println!("sent!")
             }
-        }
+            Err(err) => {
+                defmt::println!("err {}", err);
+            }
+        };
     }
 }
 
-// End of file
+fn push_joystick_report(
+    report: JoystickReport,
+    player: Player,
+) -> Result<usize, usb_device::UsbError> {
+    critical_section::with(|_| unsafe {
+        match player {
+            Player::One => USB_HID_JOY_P1.as_mut().map(|hid| hid.push_input(&report)),
+            Player::Two => USB_HID_JOY_P2.as_mut().map(|hid| hid.push_input(&report)),
+        }
+    })
+    .unwrap()
+}
+
+/// This function is called whenever the USB Hardware generates an Interrupt
+/// Request.
+#[allow(non_snake_case)]
+#[interrupt]
+unsafe fn USBCTRL_IRQ() {
+    // Handle USB request
+    let usb_dev = USB_DEVICE.as_mut().unwrap();
+    let usb_hid_j1 = USB_HID_JOY_P1.as_mut().unwrap();
+    let usb_hid_j2 = USB_HID_JOY_P2.as_mut().unwrap();
+    usb_dev.poll(&mut [usb_hid_j1, usb_hid_j2]);
+}

@@ -1,0 +1,13 @@
+[package]
+name = "usdb-joystic-hid-descriptor"
+version = "0.1.0"
+edition = "2021"
+
+
+[dependencies]
+usbd-hid = "0.6.1"
+usbd-hid-macros = { version = "0.6.0" }
+
+[dependencies.serde]
+version = "1.0"
+default-features = false
