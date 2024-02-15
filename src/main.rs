@@ -3,35 +3,22 @@
 
 use rp_pico as bsp;
 
-use defmt_rtt as _; // global logger
+use defmt_rtt as _; // logger
+use panic_halt as _;
 
 // The macro for our start-up function
 use bsp::entry;
-
+use bsp::hal;
+use bsp::hal::prelude::*;
 // The macro for marking our interrupt functions
 use bsp::hal::pac::interrupt;
-
-// Ensure we halt the program on panic (if we don't mention this crate it won't
-// be linked)
-use panic_halt as _;
-
-// Pull in any important traits
-use bsp::hal::prelude::*;
-
-// A shorter alias for the Peripheral Access Crate, which provides low-level
-// register access
-use bsp::hal::pac;
-
-// A shorter alias for the Hardware Abstraction Layer, which provides
-// higher-level drivers.
-use bsp::hal;
 
 // USB Device support
 use usb_device::{class_prelude::*, prelude::*};
 use usbd_hid::descriptor::SerializedDescriptor;
 use usbd_hid::hid_class::HIDClass;
-
 use usdb_joystic_hid_descriptor::JoystickReport;
+
 
 /// The USB Device Driver (shared with the interrupt).
 static mut USB_DEVICE: Option<UsbDevice<hal::usb::UsbBus>> = None;
@@ -59,7 +46,7 @@ enum Player {
 #[entry]
 fn main() -> ! {
     // Grab our singleton objects
-    let mut pac = pac::Peripherals::take().unwrap();
+    let mut pac = hal::pac::Peripherals::take().unwrap();
 
     // Set up the watchdog driver - needed by the clock setup code
     let mut watchdog = hal::Watchdog::new(pac.WATCHDOG);
@@ -89,18 +76,19 @@ fn main() -> ! {
         );
     }
 
-    // Set up the USB driver
-    let usb_bus = UsbBusAllocator::new(hal::usb::UsbBus::new(
+    let usb_bus = hal::usb::UsbBus::new(
         pac.USBCTRL_REGS,
         pac.USBCTRL_DPRAM,
         clocks.usb_clock,
         true,
         &mut pac.RESETS,
-    ));
+    );
+
+    let usb_bus_allocator = UsbBusAllocator::new(usb_bus);
 
     unsafe {
         // Note (safety): This is safe as interrupts haven't been started yet
-        USB_BUS = Some(usb_bus);
+        USB_BUS = Some(usb_bus_allocator);
     }
 
     // Grab a reference to the USB Bus allocator. We are promising to the
@@ -116,7 +104,7 @@ fn main() -> ! {
         USB_HID_JOY_P1 = Some(usb_hid_j1);
         USB_HID_JOY_P2 = Some(usb_hid_j2);
     }
-    //
+
     // // Create a USB device with a fake VID and PID
     let usb_dev = UsbDeviceBuilder::new(bus_ref, UsbVidPid(0x16c0, 0x27da))
         .manufacturer("Kachnamalir")
@@ -133,12 +121,11 @@ fn main() -> ! {
 
     unsafe {
         // Enable the USB interrupt
-        pac::NVIC::unmask(hal::pac::Interrupt::USBCTRL_IRQ);
+        hal::pac::NVIC::unmask(hal::pac::Interrupt::USBCTRL_IRQ);
     };
-    let core = pac::CorePeripherals::take().unwrap();
+    let core = hal::pac::CorePeripherals::take().unwrap();
     let mut delay = cortex_m::delay::Delay::new(core.SYST, clocks.system_clock.freq().to_Hz());
 
-    // Move the cursor up and down every 200ms
     loop {
         delay.delay_ms(1000);
         let report = JoystickReport {
@@ -147,13 +134,14 @@ fn main() -> ! {
             buttons: 1,
         };
         let _ = match push_joystick_report(report, Player::One) {
-            Ok(_) => {
-                defmt::println!("sent!")
+            Ok(size) => {
+                defmt::println!("{} sent!", size)
             }
             Err(err) => {
                 defmt::println!("err {}", err);
             }
         };
+        defmt::println!("tick")
     }
 }
 

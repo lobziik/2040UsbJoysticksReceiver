@@ -21,7 +21,7 @@ panic-halt = "0.2.0"
 critical-section = "1.1.2"
 
 # BSP
-rp-pico = { features = ["default", "rp2040-e5"], version = "0.7.0" }
+rp-pico = { features = ["default", "rp2040-e5"], version = "0.8.0" }
 waveshare-rp2040-zero = { features = [
     "default",
     "rp2040-e5",

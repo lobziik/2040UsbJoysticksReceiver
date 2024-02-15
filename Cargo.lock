@@ -390,25 +390,15 @@ dependencies = [
 
 [[package]]
 name = "rp-pico"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aab28f6f4e19cec2d61b64cdd685e69794b81c579fd3b765579c46018fe616d0"
+checksum = "6341771e6f8e5d130b2b3cbc23435b7847761adf198af09f4b2a60407d43bd56"
 dependencies = [
- "cortex-m",
  "cortex-m-rt",
  "fugit",
- "rp2040-boot2 0.2.1",
- "rp2040-hal 0.8.2",
+ "rp2040-boot2",
+ "rp2040-hal",
  "usb-device",
-]
-
-[[package]]
-name = "rp2040-boot2"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c773ec49b836077aa144b58dc7654a243e1eecdb6cf0d25361ae7c7600fabd8"
-dependencies = [
- "crc-any",
 ]
 
 [[package]]
@@ -418,29 +408,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c92f344f63f950ee36cf4080050e4dce850839b9175da38f9d2ffb69b4dbb21"
 dependencies = [
  "crc-any",
-]
-
-[[package]]
-name = "rp2040-hal"
-version = "0.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1369bb84862d7f69391a96606b2f29a00bfce7f29a749e23d5f01fc3f607ada0"
-dependencies = [
- "cortex-m",
- "critical-section",
- "embedded-dma",
- "embedded-hal",
- "fugit",
- "itertools",
- "nb 1.1.0",
- "paste",
- "pio",
- "rand_core",
- "rp2040-hal-macros",
- "rp2040-pac 0.4.0",
- "usb-device",
- "vcell",
- "void",
 ]
 
 [[package]]
@@ -461,7 +428,7 @@ dependencies = [
  "pio",
  "rand_core",
  "rp2040-hal-macros",
- "rp2040-pac 0.5.0",
+ "rp2040-pac",
  "usb-device",
  "vcell",
  "void",
@@ -477,17 +444,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
-]
-
-[[package]]
-name = "rp2040-pac"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9192cafbb40d717c9e0ddf767aaf9c69fee1b4e48d22ed853b57b11f6d9f3d7e"
-dependencies = [
- "cortex-m",
- "cortex-m-rt",
- "vcell",
 ]
 
 [[package]]
@@ -726,8 +682,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39c3dad88a526e5ec824856f90f01fc4f6f7efec297ab7cae80d9876985dc736"
 dependencies = [
  "cortex-m-rt",
- "rp2040-boot2 0.3.0",
- "rp2040-hal 0.9.2",
+ "rp2040-boot2",
+ "rp2040-hal",
 ]
 
 [[package]]
@@ -741,6 +697,6 @@ dependencies = [
  "fugit",
  "nb 1.1.0",
  "pio",
- "rp2040-hal 0.9.2",
+ "rp2040-hal",
  "smart-leds-trait",
 ]
