@@ -1,41 +1,87 @@
-//! Rainbow effect color wheel using the onboard NeoPixel on an Waveshare RP2040 Zero board
+//! # Pico USB 'Twitchy' Mouse Example
 //!
-//! This flows smoothly through various colors on the onboard NeoPixel.
-//! Uses the `ws2812_pio` driver to control the NeoPixel, which in turns uses the
-//! RP2040's PIO block.
+//! Creates a USB HID Class Pointing device (i.e. a virtual mouse) on a Pico
+//! board, with the USB driver running in the main thread.
 //!
-//! Copypasted from https://github.com/rp-rs/rp-hal-boards/blob/main/boards/waveshare-rp2040-zero/examples/waveshare_rp2040_zero_neopixel_rainbow.rs
-//! for experimentation purposes
+//! It generates movement reports which will twitch the cursor up and down by a
+//! few pixels, several times a second.
+//!
+//! See the `Cargo.toml` file for Copyright and license details.
+//!
+//! This is a port of
+//! https://github.com/atsamd-rs/atsamd/blob/master/boards/itsybitsy_m0/examples/twitching_usb_mouse.rs
+
 #![no_std]
 #![no_main]
 
-use core::iter::once;
-use embedded_hal::timer::CountDown;
-use fugit::ExtU32;
-use panic_halt as _;
-use smart_leds::{brightness, SmartLedsWrite, RGB8};
-use waveshare_rp2040_zero::entry;
-use waveshare_rp2040_zero::{
-    hal::{
-        clocks::{init_clocks_and_plls, Clock},
-        pac,
-        pio::PIOExt,
-        timer::Timer,
-        watchdog::Watchdog,
-        Sio,
-    },
-    Pins, XOSC_CRYSTAL_FREQ,
-};
-use ws2812_pio::Ws2812;
+use rp_pico as bsp;
 
+use defmt_rtt as _; // global logger
+
+// The macro for our start-up function
+use bsp::entry;
+
+// The macro for marking our interrupt functions
+use bsp::hal::pac::interrupt;
+
+// Ensure we halt the program on panic (if we don't mention this crate it won't
+// be linked)
+use panic_halt as _;
+
+// Pull in any important traits
+use bsp::hal::prelude::*;
+
+// A shorter alias for the Peripheral Access Crate, which provides low-level
+// register access
+use bsp::hal::pac;
+
+// A shorter alias for the Hardware Abstraction Layer, which provides
+// higher-level drivers.
+use bsp::hal;
+
+// USB Device support
+use usb_device::{class_prelude::*, prelude::*};
+use usbd_hid::descriptor::SerializedDescriptor;
+use usbd_hid::hid_class::HIDClass;
+
+use usdb_joystic_hid_descriptor::JoystickReport;
+
+/// The USB Device Driver (shared with the interrupt).
+static mut USB_DEVICE: Option<UsbDevice<hal::usb::UsbBus>> = None;
+
+/// The USB Bus Driver (shared with the interrupt).
+static mut USB_BUS: Option<UsbBusAllocator<hal::usb::UsbBus>> = None;
+
+/// The USB Human Interface Device Driver (shared with the interrupt).
+static mut USB_HID_JOY_P1: Option<HIDClass<hal::usb::UsbBus>> = None;
+/// The USB Human Interface Device Driver (shared with the interrupt).
+static mut USB_HID_JOY_P2: Option<HIDClass<hal::usb::UsbBus>> = None;
+
+enum Player {
+    One,
+    Two,
+}
+
+/// Entry point to our bare-metal application.
+///
+/// The `#[entry]` macro ensures the Cortex-M start-up code calls this function
+/// as soon as all global variables are initialised.
+///
+/// The function configures the RP2040 peripherals, then submits cursor movement
+/// updates periodically.
 #[entry]
 fn main() -> ! {
+    // Grab our singleton objects
     let mut pac = pac::Peripherals::take().unwrap();
 
-    let mut watchdog = Watchdog::new(pac.WATCHDOG);
+    // Set up the watchdog driver - needed by the clock setup code
+    let mut watchdog = hal::Watchdog::new(pac.WATCHDOG);
 
-    let clocks = init_clocks_and_plls(
-        XOSC_CRYSTAL_FREQ,
+    // Configure the clocks
+    //
+    // The default is to generate a 125 MHz system clock
+    let clocks = hal::clocks::init_clocks_and_plls(
+        bsp::XOSC_CRYSTAL_FREQ,
         pac.XOSC,
         pac.CLOCKS,
         pac.PLL_SYS,
@@ -46,54 +92,105 @@ fn main() -> ! {
     .ok()
     .unwrap();
 
-    let sio = Sio::new(pac.SIO);
-    let pins = Pins::new(
-        pac.IO_BANK0,
-        pac.PADS_BANK0,
-        sio.gpio_bank0,
+    {
+        let sio = hal::Sio::new(pac.SIO);
+        let _pins = rp_pico::Pins::new(
+            pac.IO_BANK0,
+            pac.PADS_BANK0,
+            sio.gpio_bank0,
+            &mut pac.RESETS,
+        );
+    }
+
+    // Set up the USB driver
+    let usb_bus = UsbBusAllocator::new(hal::usb::UsbBus::new(
+        pac.USBCTRL_REGS,
+        pac.USBCTRL_DPRAM,
+        clocks.usb_clock,
+        true,
         &mut pac.RESETS,
-    );
+    ));
 
-    let timer = Timer::new(pac.TIMER, &mut pac.RESETS, &clocks);
-    let mut delay = timer.count_down();
+    unsafe {
+        // Note (safety): This is safe as interrupts haven't been started yet
+        USB_BUS = Some(usb_bus);
+    }
 
-    // Configure the addressable LED
-    let (mut pio, sm0, _, _, _) = pac.PIO0.split(&mut pac.RESETS);
-    let mut ws = Ws2812::new(
-        // The onboard NeoPixel is attached to GPIO pin #16 on the Feather RP2040.
-        pins.neopixel.into_function(),
-        &mut pio,
-        sm0,
-        clocks.peripheral_clock.freq(),
-        timer.count_down(),
-    );
+    // Grab a reference to the USB Bus allocator. We are promising to the
+    // compiler not to take mutable access to this global variable whilst this
+    // reference exists!
+    let bus_ref = unsafe { USB_BUS.as_ref().unwrap() };
 
-    // Infinite colour wheel loop
-    let mut n: u8 = 128;
+    // // Set up the USB HID Class Device driver, providing Mouse Reports
+    let usb_hid_j1 = HIDClass::new(bus_ref, JoystickReport::desc(), 20);
+    let usb_hid_j2 = HIDClass::new(bus_ref, JoystickReport::desc(), 20);
+    unsafe {
+        // Note (safety): This is safe as interrupts haven't been started yet.
+        USB_HID_JOY_P1 = Some(usb_hid_j1);
+        USB_HID_JOY_P2 = Some(usb_hid_j2);
+    }
+    //
+    // // Create a USB device with a fake VID and PID
+    let usb_dev = UsbDeviceBuilder::new(bus_ref, UsbVidPid(0x16c0, 0x27da))
+        .manufacturer("Kachnamalir")
+        .product("Rusty radio joysticks")
+        .serial_number("one-of-a-kind-pico")
+        .device_class(0)
+        .composite_with_iads()
+        .build();
+
+    unsafe {
+        // Note (safety): This is safe as interrupts haven't been started yet
+        USB_DEVICE = Some(usb_dev);
+    }
+
+    unsafe {
+        // Enable the USB interrupt
+        pac::NVIC::unmask(hal::pac::Interrupt::USBCTRL_IRQ);
+    };
+    let core = pac::CorePeripherals::take().unwrap();
+    let mut delay = cortex_m::delay::Delay::new(core.SYST, clocks.system_clock.freq().to_Hz());
+
+    // Move the cursor up and down every 200ms
     loop {
-        ws.write(brightness(once(wheel(n)), 32)).unwrap();
-        n = n.wrapping_add(1);
-
-        delay.start(25.millis());
-        let _ = nb::block!(delay.wait());
+        delay.delay_ms(1000);
+        let report = JoystickReport {
+            x: 0,
+            y: 0,
+            buttons: 1,
+        };
+        let _ = match push_joystick_report(report, Player::One) {
+            Ok(_) => {
+                defmt::println!("sent!")
+            }
+            Err(err) => {
+                defmt::println!("err {}", err);
+            }
+        };
     }
 }
 
-/// Convert a number from `0..=255` to an RGB color triplet.
-///
-/// The colours are a transition from red, to green, to blue and back to red.
-fn wheel(mut wheel_pos: u8) -> RGB8 {
-    wheel_pos = 255 - wheel_pos;
-    if wheel_pos < 85 {
-        // No green in this sector - red and blue only
-        (255 - (wheel_pos * 3), 0, wheel_pos * 3).into()
-    } else if wheel_pos < 170 {
-        // No red in this sector - green and blue only
-        wheel_pos -= 85;
-        (0, wheel_pos * 3, 255 - (wheel_pos * 3)).into()
-    } else {
-        // No blue in this sector - red and green only
-        wheel_pos -= 170;
-        (wheel_pos * 3, 255 - (wheel_pos * 3), 0).into()
-    }
+fn push_joystick_report(
+    report: JoystickReport,
+    player: Player,
+) -> Result<usize, usb_device::UsbError> {
+    critical_section::with(|_| unsafe {
+        match player {
+            Player::One => USB_HID_JOY_P1.as_mut().map(|hid| hid.push_input(&report)),
+            Player::Two => USB_HID_JOY_P2.as_mut().map(|hid| hid.push_input(&report)),
+        }
+    })
+    .unwrap()
+}
+
+/// This function is called whenever the USB Hardware generates an Interrupt
+/// Request.
+#[allow(non_snake_case)]
+#[interrupt]
+unsafe fn USBCTRL_IRQ() {
+    // Handle USB request
+    let usb_dev = USB_DEVICE.as_mut().unwrap();
+    let usb_hid_j1 = USB_HID_JOY_P1.as_mut().unwrap();
+    let usb_hid_j2 = USB_HID_JOY_P2.as_mut().unwrap();
+    usb_dev.poll(&mut [usb_hid_j1, usb_hid_j2]);
 }
