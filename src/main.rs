@@ -1,7 +1,16 @@
 #![no_std]
 #![no_main]
 
+#[cfg(all(feature = "rp-pico", feature = "waveshare-rp2040-zero"))]
+compile_error!(
+    "board specific crate \"rp-pico\" and \"waveshare-rp2040-zero\" cannot be enabled at the same time"
+);
+
+#[cfg(feature = "rp-pico")]
 use rp_pico as bsp;
+
+#[cfg(feature = "waveshare-rp2040-zero")]
+use waveshare_rp2040_zero as bsp;
 
 use defmt_rtt as _; // logger
 use panic_halt as _;
@@ -66,7 +75,7 @@ fn main() -> ! {
 
     {
         let sio = hal::Sio::new(pac.SIO);
-        let _pins = rp_pico::Pins::new(
+        let _pins = bsp::Pins::new(
             pac.IO_BANK0,
             pac.PADS_BANK0,
             sio.gpio_bank0,
