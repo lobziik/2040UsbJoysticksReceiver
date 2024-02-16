@@ -30,14 +30,8 @@ waveshare-rp2040-zero = { features = [
 # USB
 usb-device = { version = "0.2.9", features = ["defmt"] }
 usbd-hid = "0.6.1"
-usbd-serial = "0.1.1"
 usdb-joystic-hid-descriptor = {path = "usdb-joystic-hid-descriptor"}
 
-# For build the example
-# https://github.com/rp-rs/rp-hal-boards/blob/main/boards/waveshare-rp2040-zero/examples/waveshare_rp2040_zero_neopixel_rainbow.rs
-smart-leds = "0.3" # 0.4 of this brings smart-leds-trait crate 0.3.0
-# which breaks compilation due to ws2812-pio depends on smart-leds-trait 0.2.1
-ws2812-pio = "0.7.0"
 
 # cargo build/run
 [profile.dev]
