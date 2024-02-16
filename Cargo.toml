@@ -45,7 +45,7 @@ overflow-checks = true
 # cargo build/run --release
 [profile.release]
 codegen-units = 1
-debug = 2
+debug = false
 debug-assertions = false
 incremental = false
 lto = 'fat'
