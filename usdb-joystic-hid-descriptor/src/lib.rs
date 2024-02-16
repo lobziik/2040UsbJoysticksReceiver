@@ -7,16 +7,16 @@ use usbd_hid_macros::gen_hid_descriptor;
 
 #[gen_hid_descriptor(
     (collection = APPLICATION, usage_page = GENERIC_DESKTOP, usage = GAMEPAD) = {
-        (usage_page = GENERIC_DESKTOP,) = {
+        (collection = APPLICATION, usage = POINTER) = {
             (usage = X,) = {
-                # [item_settings data, variable, relative] x = input;
+                # [item_settings data, variable, absolute] x = input;
             };
             (usage = Y,) = {
-                # [item_settings data, variable, relative] y = input;
+                # [item_settings data, variable, absolute] y = input;
             };
         };
-        (usage_page = BUTTON, collection = PHYSICAL, usage_min = 0x01, usage_max = 0x0C) = {
-            #[item_settings data,array,absolute] buttons=input;
+        (usage_page = BUTTON, usage_min = BUTTON_1, usage_max = BUTTON_8, logical_min = 0) = {
+            #[packed_bits 8] #[item_settings data, variable, absolute] buttons=input;
         };
     }
 )]
