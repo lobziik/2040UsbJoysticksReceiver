@@ -1,0 +1,11 @@
+// Xn297      rp-pico   bb      Wire
+//  pin        pin      pin    color
+
+//  IRQ         -               gray
+//  MISO (rx)   21      20      green
+//  MOSI (tx)   25      16      yellow
+//  SCLK        24      17      violet
+//  CSN         22      19      blue
+//  CE          27      14      brown
+//  VCC         36      5       black
+//  GND         38      3       red
