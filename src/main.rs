@@ -130,8 +130,8 @@ fn main() -> ! {
     let bus_ref = unsafe { USB_BUS.as_ref().unwrap() };
 
     // // Set up the USB HID Class Device driver, providing Mouse Reports
-    let usb_hid_j1 = HIDClass::new(bus_ref, JoystickReport::desc(), 10);
-    let usb_hid_j2 = HIDClass::new(bus_ref, JoystickReport::desc(), 10);
+    let usb_hid_j1 = HIDClass::new(bus_ref, JoystickReport::desc(), 8);
+    let usb_hid_j2 = HIDClass::new(bus_ref, JoystickReport::desc(), 8);
     unsafe {
         // Note (safety): This is safe as interrupts haven't been started yet.
         USB_HID_JOY_P1 = Some(usb_hid_j1);
@@ -157,18 +157,15 @@ fn main() -> ! {
         hal::pac::NVIC::unmask(hal::pac::Interrupt::USBCTRL_IRQ);
     };
 
-    let mut input_count_down = timer.count_down();
-    input_count_down.start(9_u32.millis());
-
     let mut check_transmission = timer.count_down();
-    check_transmission.start(10_u32.millis());
+    check_transmission.start(5_u32.millis());
 
-    let player_one_report = JoystickReport {
+    let mut player_one_report = JoystickReport {
         x: 0,
         y: 0,
         buttons: 0,
     };
-    let player_two_report = JoystickReport {
+    let mut player_two_report = JoystickReport {
         x: 0,
         y: 0,
         buttons: 0,
@@ -177,19 +174,29 @@ fn main() -> ! {
     loop {
         if check_transmission.wait().is_ok() {
             // 3 because register is a part of transmission, need fix it
-            let _ = t.read_rx_payload::<3>().unwrap().is_some_and(|payload| {
-                let [_, first_byte, second_byte] = payload;
-                defmt::println!("payload: {:#010b} {:#010b}", first_byte, second_byte);
-                true
-            });
-        }
+            match t.read_rx_payload::<3>().unwrap() {
+                Some(payload) => {
+                    let [_, first_byte, second_byte] = payload;
+                    let _ = match first_byte & (1 << 7) > 0 {
+                        false => { // player one
+                            translate_receiver_payload_to_joystick_report([first_byte, second_byte], &mut player_one_report)
+                        },
+                        true => { // player two
+                            translate_receiver_payload_to_joystick_report([first_byte, second_byte], &mut player_two_report)
+                        }
+                    };
+                },
+                None => {
+                    player_one_report.set_zero();
+                    player_two_report.set_zero();
+                }
+            }
 
-        if input_count_down.wait().is_ok() {
             match push_joystick_report(player_one_report, Player::One) {
                 Err(UsbError::WouldBlock) => {}
                 Ok(_) => {}
                 Err(e) => {
-                    defmt::println!("err: {:?}", e)
+                    defmt::println!("err push p1: {:?}", e)
                 }
             }
 
@@ -197,11 +204,47 @@ fn main() -> ! {
                 Err(UsbError::WouldBlock) => {}
                 Ok(_) => {}
                 Err(e) => {
-                    defmt::println!("err: {:?}", e)
+                    defmt::println!("err push p2: {:?}", e)
                 }
             }
         }
     }
+}
+
+fn translate_receiver_payload_to_joystick_report(payload: [u8; 2], report: &mut JoystickReport) {
+    let [byte_one, byte_two] = payload;
+
+    if byte_two == 255 && (byte_one == 0 || byte_one == 128) { // special case, nothing pressed
+        return;
+    }
+
+    // byte two contains ones when nothing pressed, key press encoded as zero in specific byte
+    // negate entire byte and apply mask on first 4 bits to get directions
+    let directions: u8 = !byte_two & 0b00001111;
+
+    match directions {
+        0b00000001 => { report.x = 127; } // RIGHT
+        0b00000010 => { report.x = -127; }  // LEFT
+        0b00000100 => { report.y = -127; } // DOWN
+        0b00001000 => { report.y = 127; } // UP
+
+        0b00001001 => { report.y = 127; report.x = 127} // UP + RIGHT
+        0b00001010 => { report.y = 127; report.x = -127} // UP + LEFT
+
+        0b00000101 => { report.y = -127; report.x = -127} // DOWN + RIGHT
+        0b00000110 => { report.y = -127; report.x = -127} // DOWN + LEFT
+
+        0b00000000 => { report.y = 0; report.x = 0} // nothing pressed
+
+        _ => {
+            defmt::println!(
+                "Impossible combination of directions, should not be happening: {:#010b} {:#010b}",
+                byte_two, directions
+            )
+        }
+    }
+
+
 }
 
 fn push_joystick_report(report: JoystickReport, player: Player) -> Result<usize, UsbError> {

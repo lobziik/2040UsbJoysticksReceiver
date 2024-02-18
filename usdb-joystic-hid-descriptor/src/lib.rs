@@ -26,3 +26,11 @@ pub struct JoystickReport {
     pub y: i8,
     pub buttons: u8,
 }
+
+impl JoystickReport {
+    pub fn set_zero(&mut self) {
+        self.x = 0;
+        self.y = 0;
+        self.buttons = 0;
+    }
+}
