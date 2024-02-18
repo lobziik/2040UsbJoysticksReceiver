@@ -15,8 +15,8 @@ use waveshare_rp2040_zero as bsp;
 use defmt_rtt as _; // logger
 use panic_halt as _;
 
-use fugit::ExtU32;
 use embedded_hal::timer::CountDown;
+use fugit::ExtU32;
 
 // The macro for our start-up function
 use bsp::entry;
@@ -24,6 +24,11 @@ use bsp::hal;
 
 // The macro for marking our interrupt functions
 use bsp::hal::pac::interrupt;
+use embedded_hal::digital::v2::OutputPin;
+
+// Spi setup related traits
+use bsp::hal::fugit::RateExtU32;
+use hal::clocks::Clock;
 
 // USB Device support
 use usb_device::{class_prelude::*, prelude::*};
@@ -31,6 +36,7 @@ use usbd_hid::descriptor::SerializedDescriptor;
 use usbd_hid::hid_class::HIDClass;
 use usdb_joystic_hid_descriptor::JoystickReport;
 
+mod xn297;
 
 /// The USB Device Driver (shared with the interrupt).
 static mut USB_DEVICE: Option<UsbDevice<hal::usb::UsbBus>> = None;
@@ -47,7 +53,6 @@ enum Player {
     One,
     Two,
 }
-
 
 #[entry]
 fn main() -> ! {
@@ -73,15 +78,36 @@ fn main() -> ! {
     .unwrap();
     let timer = hal::Timer::new(pac.TIMER, &mut pac.RESETS, &clocks);
 
-    {
-        let sio = hal::Sio::new(pac.SIO);
-        let _pins = bsp::Pins::new(
-            pac.IO_BANK0,
-            pac.PADS_BANK0,
-            sio.gpio_bank0,
-            &mut pac.RESETS,
-        );
-    }
+    let sio = hal::Sio::new(pac.SIO);
+    let pins = bsp::Pins::new(
+        pac.IO_BANK0,
+        pac.PADS_BANK0,
+        sio.gpio_bank0,
+        &mut pac.RESETS,
+    );
+
+    let spi_miso = pins.gpio16.into_function::<hal::gpio::FunctionSpi>();
+    // seems doesnt work in a way i need, experiment
+    // https://github.com/rp-rs/rp-hal/issues/480
+    // let spi_csn = pins.gpio17.into_function::<hal::gpio::FunctionSpi>();
+    let spi_sclk = pins.gpio18.into_function::<hal::gpio::FunctionSpi>();
+    let spi_mosi = pins.gpio19.into_function::<hal::gpio::FunctionSpi>();
+
+    let mut spi_csn = pins.gpio17.into_push_pull_output();
+    spi_csn.set_high().unwrap();
+
+    let mut spi_ce = pins.gpio21.into_push_pull_output();
+    spi_ce.set_low().unwrap();
+
+    let spi = hal::spi::Spi::<_, _, _, 8>::new(pac.SPI0, (spi_mosi, spi_miso, spi_sclk)).init(
+        &mut pac.RESETS,
+        clocks.peripheral_clock.freq(),
+        4.MHz(),
+        embedded_hal::spi::MODE_0,
+    );
+
+    let mut t = xn297::Xn297L::new(spi, spi_csn, spi_ce);
+    t.init().unwrap();
 
     let usb_bus = hal::usb::UsbBus::new(
         pac.USBCTRL_REGS,
@@ -134,34 +160,31 @@ fn main() -> ! {
     let mut input_count_down = timer.count_down();
     input_count_down.start(9_u32.millis());
 
-    let mut input_change = timer.count_down();
-    input_change.start(1_u32.secs());
+    let mut check_transmission = timer.count_down();
+    check_transmission.start(10_u32.millis());
 
-    let mut x: i8 = 0;
-    let mut y: i8 = 0;
-    let mut buttons: u8 = 0;
+    let player_one_report = JoystickReport {
+        x: 0,
+        y: 0,
+        buttons: 0,
+    };
+    let player_two_report = JoystickReport {
+        x: 0,
+        y: 0,
+        buttons: 0,
+    };
 
     loop {
-        if input_change.wait().is_ok() {
-            match (x, y, buttons) {
-                (127, -127, 8) => {
-                    x = 0;
-                    y = 0;
-                    buttons = 0;
-                },
-                (_, _, _) => {
-                    x = 127;
-                    y = -127;
-                    buttons = 0b00001000;
-                }
-            }
-
-            defmt::println!("input changed curr {} {} {}", x, y, buttons)
+        if check_transmission.wait().is_ok() {
+            // 3 because register is a part of transmission, need fix it
+            let _ = t.read_rx_payload::<3>().unwrap().is_some_and(|payload| {
+                defmt::println!("payload: {:?}", payload);
+                true
+            });
         }
 
         if input_count_down.wait().is_ok() {
-            let report = JoystickReport { x, y, buttons };
-            match push_joystick_report(report, Player::One) {
+            match push_joystick_report(player_one_report, Player::One) {
                 Err(UsbError::WouldBlock) => {}
                 Ok(_) => {}
                 Err(e) => {
@@ -169,7 +192,7 @@ fn main() -> ! {
                 }
             }
 
-            match push_joystick_report(report, Player::Two) {
+            match push_joystick_report(player_two_report, Player::Two) {
                 Err(UsbError::WouldBlock) => {}
                 Ok(_) => {}
                 Err(e) => {
@@ -180,10 +203,7 @@ fn main() -> ! {
     }
 }
 
-fn push_joystick_report(
-    report: JoystickReport,
-    player: Player,
-) -> Result<usize, UsbError> {
+fn push_joystick_report(report: JoystickReport, player: Player) -> Result<usize, UsbError> {
     critical_section::with(|_| unsafe {
         match player {
             Player::One => USB_HID_JOY_P1.as_mut().map(|hid| hid.push_input(&report)),
