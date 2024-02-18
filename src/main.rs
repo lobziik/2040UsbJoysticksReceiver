@@ -178,7 +178,8 @@ fn main() -> ! {
         if check_transmission.wait().is_ok() {
             // 3 because register is a part of transmission, need fix it
             let _ = t.read_rx_payload::<3>().unwrap().is_some_and(|payload| {
-                defmt::println!("payload: {:?}", payload);
+                let [_, first_byte, second_byte] = payload;
+                defmt::println!("payload: {:#010b} {:#010b}", first_byte, second_byte);
                 true
             });
         }
