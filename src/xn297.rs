@@ -70,6 +70,7 @@ where
     }
 
     // TODO PAYLOAD_SIZE lies now, should be +1 because register number is a part of spi transmission
+    // Rework interface
     pub fn read_rx_payload<const PAYLOAD_SIZE: usize>(
         &mut self,
     ) -> Result<Option<[u8; PAYLOAD_SIZE]>, SPI::Error> {

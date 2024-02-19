@@ -244,7 +244,18 @@ fn translate_receiver_payload_to_joystick_report(payload: [u8; 2], report: &mut 
         }
     }
 
+    // Handle buttons, desired layout in byte A,B,X,Y,Z,C,start,select
+    // Counts from right to left, i.e bit 0 at the end
+    // 0b00000001 <- bit 0
 
+    // byte one, buttons X,Y,Z,C encoded on bits 3-6 of the first byte
+    let xyzc_buttons = (byte_one & 0b01111000).reverse_bits() << 1;
+
+    // extract A,B,start,select
+    let ab_buttons = (!byte_two & 0b11000000).reverse_bits();
+    let start_select_buttons = (!byte_two & 0b00110000) << 2;
+
+    report.buttons = xyzc_buttons | ab_buttons | start_select_buttons
 }
 
 fn push_joystick_report(report: JoystickReport, player: Player) -> Result<usize, UsbError> {
