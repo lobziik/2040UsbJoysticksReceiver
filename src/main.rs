@@ -186,10 +186,7 @@ fn main() -> ! {
                         }
                     };
                 },
-                None => {
-                    player_one_report.set_zero();
-                    player_two_report.set_zero();
-                }
+                None => {} // relies on fact joystick transmits message with neutral state (no button pressed)
             }
 
             match push_joystick_report(player_one_report, Player::One) {
@@ -215,6 +212,7 @@ fn translate_receiver_payload_to_joystick_report(payload: [u8; 2], report: &mut 
     let [byte_one, byte_two] = payload;
 
     if byte_two == 255 && (byte_one == 0 || byte_one == 128) { // special case, nothing pressed
+        report.set_zero();
         return;
     }
 
@@ -222,17 +220,19 @@ fn translate_receiver_payload_to_joystick_report(payload: [u8; 2], report: &mut 
     // negate entire byte and apply mask on first 4 bits to get directions
     let directions: u8 = !byte_two & 0b00001111;
 
+    // defmt::println!("{:#010b}", directions);
+
     match directions {
-        0b00000001 => { report.x = 127; } // RIGHT
-        0b00000010 => { report.x = -127; }  // LEFT
-        0b00000100 => { report.y = -127; } // DOWN
-        0b00001000 => { report.y = 127; } // UP
+        0b00000001 => { report.y = 0; report.x = 127;} // RIGHT
+        0b00000010 => { report.y = 0; report.x = -127; }  // LEFT
+        0b00000100 => { report.y = 127; report.x = 0;} // DOWN
+        0b00001000 => { report.y = -127; report.x = 0;} // UP
 
-        0b00001001 => { report.y = 127; report.x = 127} // UP + RIGHT
-        0b00001010 => { report.y = 127; report.x = -127} // UP + LEFT
+        0b00001001 => { report.y = -127; report.x = 127} // UP + RIGHT
+        0b00001010 => { report.y = -127; report.x = -127} // UP + LEFT
 
-        0b00000101 => { report.y = -127; report.x = -127} // DOWN + RIGHT
-        0b00000110 => { report.y = -127; report.x = -127} // DOWN + LEFT
+        0b00000101 => { report.y = 127; report.x = 127} // DOWN + RIGHT
+        0b00000110 => { report.y = 127; report.x = -127} // DOWN + LEFT
 
         0b00000000 => { report.y = 0; report.x = 0} // nothing pressed
 
