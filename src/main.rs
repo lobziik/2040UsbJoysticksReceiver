@@ -31,7 +31,7 @@ use bsp::hal::fugit::RateExtU32;
 use hal::clocks::Clock;
 
 // USB Device support
-use usb_device::{class_prelude::*, prelude::*};
+use usb_device::{class_prelude::*, prelude::*, device::UsbRev};
 use usbd_hid::descriptor::SerializedDescriptor;
 use usbd_hid::hid_class::HIDClass;
 use usdb_joystic_hid_descriptor::JoystickReport;
@@ -129,7 +129,7 @@ fn main() -> ! {
     // reference exists!
     let bus_ref = unsafe { USB_BUS.as_ref().unwrap() };
 
-    // // Set up the USB HID Class Device driver, providing Mouse Reports
+    // Set up the USB HID Class Device driver, providing Joystick Report
     let usb_hid_j1 = HIDClass::new(bus_ref, JoystickReport::desc(), 8);
     let usb_hid_j2 = HIDClass::new(bus_ref, JoystickReport::desc(), 8);
     unsafe {
@@ -138,12 +138,17 @@ fn main() -> ! {
         USB_HID_JOY_P2 = Some(usb_hid_j2);
     }
 
-    // // Create a USB device with a fake VID and PID
-    let usb_dev = UsbDeviceBuilder::new(bus_ref, UsbVidPid(0x16c0, 0x27da))
+    let usb_dev_descriptors = StringDescriptors::default()
         .manufacturer("Kachnamalir")
-        .product("Rusty radio joysticks")
-        .serial_number("one-of-a-kind-pico")
+        .product("Rusty radio joystick")
+        .serial_number("one of a kind");
+
+    // Create a USB device with a fake VID and PID
+    let usb_dev = UsbDeviceBuilder::new(bus_ref, UsbVidPid(0x16c0, 0x27dc))
+        .strings(&[usb_dev_descriptors])
+        .expect("should not happen")
         .device_class(0)
+        .usb_rev(UsbRev::Usb200)
         .composite_with_iads()
         .build();
 
@@ -219,8 +224,6 @@ fn translate_receiver_payload_to_joystick_report(payload: [u8; 2], report: &mut 
     // byte two contains ones when nothing pressed, key press encoded as zero in specific byte
     // negate entire byte and apply mask on first 4 bits to get directions
     let directions: u8 = !byte_two & 0b00001111;
-
-    // defmt::println!("{:#010b}", directions);
 
     match directions {
         0b00000001 => { report.y = 0; report.x = 127;} // RIGHT
