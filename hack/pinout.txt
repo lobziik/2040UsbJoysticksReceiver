@@ -9,3 +9,16 @@
 //  CE          27      14      brown
 //  VCC         36      5       black
 //  GND         38      3       red
+
+
+// Xn297      wsh-rp-2040-z     Wire
+//  pin        pin             color
+
+//  IRQ         -              -
+//  MISO (rx)   12              green
+//  MOSI (tx)   11              yellow
+//  SCLK        10              violet
+//  CSN         5               blue
+//  CE          3               white
+//  VCC         3v3             red
+//  GND         GND             black

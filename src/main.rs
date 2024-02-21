@@ -86,20 +86,20 @@ fn main() -> ! {
         &mut pac.RESETS,
     );
 
-    let spi_miso = pins.gpio16.into_function::<hal::gpio::FunctionSpi>();
+    let spi_miso = pins.gp12.into_function::<hal::gpio::FunctionSpi>();
     // seems doesnt work in a way i need, experiment
     // https://github.com/rp-rs/rp-hal/issues/480
     // let spi_csn = pins.gpio17.into_function::<hal::gpio::FunctionSpi>();
-    let spi_sclk = pins.gpio18.into_function::<hal::gpio::FunctionSpi>();
-    let spi_mosi = pins.gpio19.into_function::<hal::gpio::FunctionSpi>();
+    let spi_sclk = pins.gp10.into_function::<hal::gpio::FunctionSpi>();
+    let spi_mosi = pins.gp11.into_function::<hal::gpio::FunctionSpi>();
 
-    let mut spi_csn = pins.gpio17.into_push_pull_output();
+    let mut spi_csn = pins.gp5.into_push_pull_output();
     spi_csn.set_high().unwrap();
 
-    let mut spi_ce = pins.gpio21.into_push_pull_output();
+    let mut spi_ce = pins.gp3.into_push_pull_output();
     spi_ce.set_low().unwrap();
 
-    let spi = hal::spi::Spi::<_, _, _, 8>::new(pac.SPI0, (spi_mosi, spi_miso, spi_sclk)).init(
+    let spi = hal::spi::Spi::<_, _, _, 8>::new(pac.SPI1, (spi_mosi, spi_miso, spi_sclk)).init(
         &mut pac.RESETS,
         clocks.peripheral_clock.freq(),
         4.MHz(),
