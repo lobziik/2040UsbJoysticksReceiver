@@ -11,6 +11,10 @@ use rp_pico as bsp;
 
 #[cfg(feature = "waveshare-rp2040-zero")]
 use waveshare_rp2040_zero as bsp;
+// use ws2812_pio::Ws2812;
+// use smart_leds::{brightness, SmartLedsWrite};
+// use bsp::hal::pio::PIOExt;
+// use core::iter::once;
 
 use defmt_rtt as _; // logger
 use panic_halt as _;
@@ -37,6 +41,7 @@ use usbd_hid::hid_class::HIDClass;
 use usdb_joystic_hid_descriptor::JoystickReport;
 
 mod xn297;
+// mod led_wheel;
 
 /// The USB Device Driver (shared with the interrupt).
 static mut USB_DEVICE: Option<UsbDevice<hal::usb::UsbBus>> = None;
@@ -85,6 +90,8 @@ fn main() -> ! {
         sio.gpio_bank0,
         &mut pac.RESETS,
     );
+    // let (mut pio, sm0, _, _, _) = pac.PIO0.split(&mut pac.RESETS);
+
 
     let spi_miso = pins.gp12.into_function::<hal::gpio::FunctionSpi>();
     // seems doesnt work in a way i need, experiment
@@ -176,6 +183,18 @@ fn main() -> ! {
         buttons: 0,
     };
 
+    // let mut led_wheel = timer.count_down();
+    // check_transmission.start(40_u32.millis());
+    // let mut led_wheel_counter: u8 = 128;
+    // let mut ws = Ws2812::new(
+    //     // The onboard NeoPixel is attached to GPIO pin #16 on the Feather RP2040.
+    //     pins.neopixel.into_function(),
+    //     &mut pio,
+    //     sm0,
+    //     clocks.peripheral_clock.freq(),
+    //     timer.count_down(),
+    // );
+
     loop {
         if check_transmission.wait().is_ok() {
             // 3 because register is a part of transmission, need fix it
@@ -210,6 +229,11 @@ fn main() -> ! {
                 }
             }
         }
+
+        // if led_wheel.wait().is_ok() {
+        //     ws.write(brightness(once(led_wheel::wheel(led_wheel_counter)), 32)).unwrap();
+        //     led_wheel_counter = led_wheel_counter.wrapping_add(1);
+        // }
     }
 }
 
