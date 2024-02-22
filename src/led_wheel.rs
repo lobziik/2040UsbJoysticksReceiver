@@ -1,4 +1,4 @@
-use smart_leds::{RGB8};
+use smart_leds::RGB8;
 
 pub fn wheel(mut wheel_pos: u8) -> RGB8 {
     wheel_pos = 255 - wheel_pos;

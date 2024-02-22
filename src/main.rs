@@ -1,15 +1,6 @@
 #![no_std]
 #![no_main]
 
-#[cfg(all(feature = "rp-pico", feature = "waveshare-rp2040-zero"))]
-compile_error!(
-    "board specific crate \"rp-pico\" and \"waveshare-rp2040-zero\" cannot be enabled at the same time"
-);
-
-#[cfg(feature = "rp-pico")]
-use rp_pico as bsp;
-
-#[cfg(feature = "waveshare-rp2040-zero")]
 use waveshare_rp2040_zero as bsp;
 
 use defmt_rtt as _; // logger
@@ -31,21 +22,16 @@ use bsp::hal::fugit::RateExtU32;
 use hal::clocks::Clock;
 
 // USB Device support
-use usb_device::{class_prelude::*, prelude::*, device::UsbRev};
+use usb_device::{class_prelude::*, device::UsbRev, prelude::*};
 use usbd_hid::descriptor::SerializedDescriptor;
 use usbd_hid::hid_class::HIDClass;
 use usdb_joystic_hid_descriptor::JoystickReport;
 
 // Led
-#[cfg(feature = "waveshare-rp2040-zero")]
-use ws2812_pio::Ws2812;
-#[cfg(feature = "waveshare-rp2040-zero")]
-use smart_leds::{brightness, SmartLedsWrite};
-#[cfg(feature = "waveshare-rp2040-zero")]
 use bsp::hal::pio::PIOExt;
-#[cfg(feature = "waveshare-rp2040-zero")]
 use core::iter::once;
-#[cfg(feature = "waveshare-rp2040-zero")]
+use smart_leds::{brightness, SmartLedsWrite};
+use ws2812_pio::Ws2812;
 mod led_wheel;
 
 mod xn297;
@@ -99,11 +85,7 @@ fn main() -> ! {
     );
     let (mut pio, _, _, _, sm4) = pac.PIO0.split(&mut pac.RESETS);
 
-
     let spi_miso = pins.gp12.into_function::<hal::gpio::FunctionSpi>();
-    // seems doesnt work in a way i need, experiment
-    // https://github.com/rp-rs/rp-hal/issues/480
-    // let spi_csn = pins.gpio17.into_function::<hal::gpio::FunctionSpi>();
     let spi_sclk = pins.gp10.into_function::<hal::gpio::FunctionSpi>();
     let spi_mosi = pins.gp11.into_function::<hal::gpio::FunctionSpi>();
 
@@ -201,24 +183,30 @@ fn main() -> ! {
         clocks.peripheral_clock.freq(),
         timer.count_down(),
     );
-    ws.write(brightness(once(led_wheel::wheel(led_wheel_counter)), 128)).unwrap();
+    ws.write(brightness(once(led_wheel::wheel(led_wheel_counter)), 128))
+        .unwrap();
 
     loop {
         if check_transmission.wait().is_ok() {
             // 3 because register is a part of transmission, need fix it
-            match t.read_rx_payload::<3>().unwrap() {
-                Some(payload) => {
-                    let [_, first_byte, second_byte] = payload;
-                    let _ = match first_byte & (1 << 7) > 0 {
-                        false => { // player one
-                            translate_receiver_payload_to_joystick_report([first_byte, second_byte], &mut player_one_report)
-                        },
-                        true => { // player two
-                            translate_receiver_payload_to_joystick_report([first_byte, second_byte], &mut player_two_report)
-                        }
-                    };
-                },
-                None => {} // relies on fact joystick transmits message with neutral state (no button pressed)
+            if let Some(payload) = t.read_rx_payload::<3>().unwrap() {
+                let [_, first_byte, second_byte] = payload;
+                match first_byte & (1 << 7) > 0 {
+                    false => {
+                        // player one
+                        translate_receiver_payload_to_joystick_report(
+                            [first_byte, second_byte],
+                            &mut player_one_report,
+                        )
+                    }
+                    true => {
+                        // player two
+                        translate_receiver_payload_to_joystick_report(
+                            [first_byte, second_byte],
+                            &mut player_two_report,
+                        )
+                    }
+                };
             }
 
             match push_joystick_report(player_one_report, Player::One) {
@@ -239,7 +227,8 @@ fn main() -> ! {
         }
 
         if led_wheel.wait().is_ok() {
-            ws.write(brightness(once(led_wheel::wheel(led_wheel_counter)), 128)).unwrap();
+            ws.write(brightness(once(led_wheel::wheel(led_wheel_counter)), 128))
+                .unwrap();
             led_wheel_counter = led_wheel_counter.wrapping_add(1);
         }
     }
@@ -248,7 +237,8 @@ fn main() -> ! {
 fn translate_receiver_payload_to_joystick_report(payload: [u8; 2], report: &mut JoystickReport) {
     let [byte_one, byte_two] = payload;
 
-    if byte_two == 255 && (byte_one == 0 || byte_one == 128) { // special case, nothing pressed
+    if byte_two == 255 && (byte_one == 0 || byte_one == 128) {
+        // special case, nothing pressed
         report.set_zero();
         return;
     }
@@ -258,23 +248,51 @@ fn translate_receiver_payload_to_joystick_report(payload: [u8; 2], report: &mut 
     let directions: u8 = !byte_two & 0b00001111;
 
     match directions {
-        0b00000001 => { report.y = 0; report.x = 127;} // RIGHT
-        0b00000010 => { report.y = 0; report.x = -127; }  // LEFT
-        0b00000100 => { report.y = 127; report.x = 0;} // DOWN
-        0b00001000 => { report.y = -127; report.x = 0;} // UP
+        0b00000001 => {
+            report.y = 0;
+            report.x = 127;
+        } // RIGHT
+        0b00000010 => {
+            report.y = 0;
+            report.x = -127;
+        } // LEFT
+        0b00000100 => {
+            report.y = 127;
+            report.x = 0;
+        } // DOWN
+        0b00001000 => {
+            report.y = -127;
+            report.x = 0;
+        } // UP
 
-        0b00001001 => { report.y = -127; report.x = 127} // UP + RIGHT
-        0b00001010 => { report.y = -127; report.x = -127} // UP + LEFT
+        0b00001001 => {
+            report.y = -127;
+            report.x = 127
+        } // UP + RIGHT
+        0b00001010 => {
+            report.y = -127;
+            report.x = -127
+        } // UP + LEFT
 
-        0b00000101 => { report.y = 127; report.x = 127} // DOWN + RIGHT
-        0b00000110 => { report.y = 127; report.x = -127} // DOWN + LEFT
+        0b00000101 => {
+            report.y = 127;
+            report.x = 127
+        } // DOWN + RIGHT
+        0b00000110 => {
+            report.y = 127;
+            report.x = -127
+        } // DOWN + LEFT
 
-        0b00000000 => { report.y = 0; report.x = 0} // nothing pressed
+        0b00000000 => {
+            report.y = 0;
+            report.x = 0
+        } // nothing pressed
 
         _ => {
             defmt::println!(
                 "Impossible combination of directions, should not be happening: {:#010b} {:#010b}",
-                byte_two, directions
+                byte_two,
+                directions
             )
         }
     }

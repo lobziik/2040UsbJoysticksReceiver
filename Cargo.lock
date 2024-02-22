@@ -402,7 +402,6 @@ dependencies = [
  "heapless 0.8.0",
  "nb 1.1.0",
  "panic-halt",
- "rp-pico",
  "smart-leds",
  "usb-device",
  "usbd-hid",
@@ -495,18 +494,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05aaa8004b64fd573fc9d002f4e632d51ad4f026c2b5ba95fcb6c2f32c2c47d8"
 dependencies = [
  "bytemuck",
-]
-
-[[package]]
-name = "rp-pico"
-version = "0.8.0"
-source = "git+https://github.com/lobziik/rp-hal-boards.git?rev=f77c644#f77c6447704c5bed6462c212acf4914d39818386"
-dependencies = [
- "cortex-m-rt",
- "fugit",
- "rp2040-boot2",
- "rp2040-hal",
- "usb-device",
 ]
 
 [[package]]

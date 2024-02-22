@@ -23,26 +23,20 @@ critical-section = "1.1.2"
 # BSP
 # rp-hal-boards depends on older usb-device version 0.2.9
 # update and get rid of the fork when theese crates will be updated and move to usb-device >0.3.0
-#rp-pico = { features = [], version = "0.8.0" , optional = true}
-#waveshare-rp2040-zero = { features = [], version = "0.7.0" , optional = true}
-rp-pico = { git = "https://github.com/lobziik/rp-hal-boards.git", rev = "f77c644", optional = true}
-waveshare-rp2040-zero = { git = "https://github.com/lobziik/rp-hal-boards.git", rev = "f77c644", optional = true}
+#waveshare-rp2040-zero = { features = [], version = "0.7.0" }
+waveshare-rp2040-zero = { git = "https://github.com/lobziik/rp-hal-boards.git", rev = "f77c644"}
 
 # Onboard LED, only for wsh-rp2040-z
 # 0.4 of this brings smart-leds-trait crate 0.3.0
 # which breaks compilation due to ws2812-pio depends on smart-leds-trait 0.2.1
-smart-leds = { version = "0.3", optional = true }
-ws2812-pio = { git = "https://github.com/lobziik/ws2812-pio-rs.git", rev = "873c780", optional = true}
+smart-leds = { version = "0.3"}
+ws2812-pio = { git = "https://github.com/lobziik/ws2812-pio-rs.git", rev = "873c780" }
 
 # USB
 usb-device = { version = "0.3.1", features = ["defmt"] }
 usbd-hid = "0.7.0"
 usdb-joystic-hid-descriptor = {path = "usdb-joystic-hid-descriptor"}
 
-
-[features]
-waveshare-rp2040-zero = ["dep:waveshare-rp2040-zero", "dep:smart-leds", "dep:ws2812-pio"]
-rp-pico = ["dep:rp-pico"]
 
 # cargo build/run
 [profile.dev]
