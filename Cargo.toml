@@ -24,8 +24,7 @@ critical-section = "1.1.2"
 # rp-hal-boards depends on older usb-device version 0.2.9
 # update and get rid of the fork when theese crates will be updated and move to usb-device >0.3.0
 #rp-pico = { features = [], version = "0.8.0" , optional = true}
-#waveshare-rp2040-zero = { features = [], version = "0.7.0" , optional = true}
-rp-pico = { git = "https://github.com/lobziik/rp-hal-boards.git", rev = "f77c644", optional = true}
+rp-pico = { git = "https://github.com/lobziik/rp-hal-boards.git", rev = "f77c644" }
 
 # USB
 usb-device = { version = "0.3.1", features = ["defmt"] }

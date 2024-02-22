@@ -167,19 +167,24 @@ fn main() -> ! {
     loop {
         if check_transmission.wait().is_ok() {
             // 3 because register is a part of transmission, need fix it
-            match t.read_rx_payload::<3>().unwrap() {
-                Some(payload) => {
-                    let [_, first_byte, second_byte] = payload;
-                    let _ = match first_byte & (1 << 7) > 0 {
-                        false => { // player one
-                            translate_receiver_payload_to_joystick_report([first_byte, second_byte], &mut player_one_report)
-                        },
-                        true => { // player two
-                            translate_receiver_payload_to_joystick_report([first_byte, second_byte], &mut player_two_report)
-                        }
-                    };
-                }
-                None => {} // relies on fact joystick transmits message with neutral state (no button pressed)
+            if let Some(payload) = t.read_rx_payload::<3>().unwrap() {
+                let [_, first_byte, second_byte] = payload;
+                match first_byte & (1 << 7) > 0 {
+                    false => {
+                        // player one
+                        translate_receiver_payload_to_joystick_report(
+                            [first_byte, second_byte],
+                            &mut player_one_report,
+                        )
+                    }
+                    true => {
+                        // player two
+                        translate_receiver_payload_to_joystick_report(
+                            [first_byte, second_byte],
+                            &mut player_two_report,
+                        )
+                    }
+                };
             }
 
             match push_joystick_report(player_one_report, Player::One) {
@@ -215,18 +220,45 @@ fn translate_receiver_payload_to_joystick_report(payload: [u8; 2], report: &mut 
     let directions: u8 = !byte_two & 0b00001111;
 
     match directions {
-        0b00000001 => { report.y = 0; report.x = 127;} // RIGHT
-        0b00000010 => { report.y = 0; report.x = -127; }  // LEFT
-        0b00000100 => { report.y = 127; report.x = 0;} // DOWN
-        0b00001000 => { report.y = -127; report.x = 0;} // UP
+        0b00000001 => {
+            report.y = 0;
+            report.x = 127;
+        } // RIGHT
+        0b00000010 => {
+            report.y = 0;
+            report.x = -127;
+        } // LEFT
+        0b00000100 => {
+            report.y = 127;
+            report.x = 0;
+        } // DOWN
+        0b00001000 => {
+            report.y = -127;
+            report.x = 0;
+        } // UP
 
-        0b00001001 => { report.y = -127; report.x = 127} // UP + RIGHT
-        0b00001010 => { report.y = -127; report.x = -127} // UP + LEFT
+        0b00001001 => {
+            report.y = -127;
+            report.x = 127
+        } // UP + RIGHT
+        0b00001010 => {
+            report.y = -127;
+            report.x = -127
+        } // UP + LEFT
 
-        0b00000101 => { report.y = 127; report.x = 127} // DOWN + RIGHT
-        0b00000110 => { report.y = 127; report.x = -127} // DOWN + LEFT
+        0b00000101 => {
+            report.y = 127;
+            report.x = 127
+        } // DOWN + RIGHT
+        0b00000110 => {
+            report.y = 127;
+            report.x = -127
+        } // DOWN + LEFT
 
-        0b00000000 => { report.y = 0; report.x = 0} // nothing pressed
+        0b00000000 => {
+            report.y = 0;
+            report.x = 0
+        } // nothing pressed
 
         _ => {
             defmt::println!(
