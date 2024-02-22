@@ -51,12 +51,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
-name = "bytemuck"
-version = "1.14.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2ef034f05691a48569bd920a96c81b9d91bbad1ab5ac7c4616c1f6ef36cb79f"
-
-[[package]]
 name = "byteorder"
 version = "1.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -403,12 +397,9 @@ dependencies = [
  "nb 1.1.0",
  "panic-halt",
  "rp-pico",
- "smart-leds",
  "usb-device",
  "usbd-hid",
  "usdb-joystic-hid-descriptor",
- "waveshare-rp2040-zero",
- "ws2812-pio",
 ]
 
 [[package]]
@@ -487,15 +478,6 @@ name = "rand_core"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
-
-[[package]]
-name = "rgb"
-version = "0.8.37"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05aaa8004b64fd573fc9d002f4e632d51ad4f026c2b5ba95fcb6c2f32c2c47d8"
-dependencies = [
- "bytemuck",
-]
 
 [[package]]
 name = "rp-pico"
@@ -631,24 +613,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.48",
-]
-
-[[package]]
-name = "smart-leds"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38dd45fa275f70b4110eac5f5182611ad384f88bb22b68b9a9c3cafd7015290b"
-dependencies = [
- "smart-leds-trait",
-]
-
-[[package]]
-name = "smart-leds-trait"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ebf6d833fa93f16a1c1874e62c2aebe8567e5bdd436d59bf543ed258b6f7a8e3"
-dependencies = [
- "rgb",
 ]
 
 [[package]]
@@ -805,28 +769,4 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "de437e2a6208b014ab52972a27e59b33fa2920d3e00fe05026167a1c509d19cc"
 dependencies = [
  "vcell",
-]
-
-[[package]]
-name = "waveshare-rp2040-zero"
-version = "0.7.0"
-source = "git+https://github.com/lobziik/rp-hal-boards.git?rev=f77c644#f77c6447704c5bed6462c212acf4914d39818386"
-dependencies = [
- "cortex-m-rt",
- "rp2040-boot2",
- "rp2040-hal",
-]
-
-[[package]]
-name = "ws2812-pio"
-version = "0.7.0"
-source = "git+https://github.com/lobziik/ws2812-pio-rs.git?rev=873c780#873c78025ea2aea7963dbdc43a8afa764bcb1427"
-dependencies = [
- "cortex-m",
- "embedded-hal 0.2.7",
- "fugit",
- "nb 1.1.0",
- "pio",
- "rp2040-hal",
- "smart-leds-trait",
 ]

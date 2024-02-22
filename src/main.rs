@@ -1,16 +1,7 @@
 #![no_std]
 #![no_main]
 
-#[cfg(all(feature = "rp-pico", feature = "waveshare-rp2040-zero"))]
-compile_error!(
-    "board specific crate \"rp-pico\" and \"waveshare-rp2040-zero\" cannot be enabled at the same time"
-);
-
-#[cfg(feature = "rp-pico")]
 use rp_pico as bsp;
-
-#[cfg(feature = "waveshare-rp2040-zero")]
-use waveshare_rp2040_zero as bsp;
 
 use defmt_rtt as _; // logger
 use panic_halt as _;
@@ -31,22 +22,10 @@ use bsp::hal::fugit::RateExtU32;
 use hal::clocks::Clock;
 
 // USB Device support
-use usb_device::{class_prelude::*, prelude::*, device::UsbRev};
+use usb_device::{class_prelude::*, device::UsbRev, prelude::*};
 use usbd_hid::descriptor::SerializedDescriptor;
 use usbd_hid::hid_class::HIDClass;
 use usdb_joystic_hid_descriptor::JoystickReport;
-
-// Led
-#[cfg(feature = "waveshare-rp2040-zero")]
-use ws2812_pio::Ws2812;
-#[cfg(feature = "waveshare-rp2040-zero")]
-use smart_leds::{brightness, SmartLedsWrite};
-#[cfg(feature = "waveshare-rp2040-zero")]
-use bsp::hal::pio::PIOExt;
-#[cfg(feature = "waveshare-rp2040-zero")]
-use core::iter::once;
-#[cfg(feature = "waveshare-rp2040-zero")]
-mod led_wheel;
 
 mod xn297;
 
@@ -97,23 +76,18 @@ fn main() -> ! {
         sio.gpio_bank0,
         &mut pac.RESETS,
     );
-    let (mut pio, _, _, _, sm4) = pac.PIO0.split(&mut pac.RESETS);
 
+    let spi_miso = pins.gpio16.into_function::<hal::gpio::FunctionSpi>();
+    let spi_sclk = pins.gpio18.into_function::<hal::gpio::FunctionSpi>();
+    let spi_mosi = pins.gpio19.into_function::<hal::gpio::FunctionSpi>();
 
-    let spi_miso = pins.gp12.into_function::<hal::gpio::FunctionSpi>();
-    // seems doesnt work in a way i need, experiment
-    // https://github.com/rp-rs/rp-hal/issues/480
-    // let spi_csn = pins.gpio17.into_function::<hal::gpio::FunctionSpi>();
-    let spi_sclk = pins.gp10.into_function::<hal::gpio::FunctionSpi>();
-    let spi_mosi = pins.gp11.into_function::<hal::gpio::FunctionSpi>();
-
-    let mut spi_csn = pins.gp5.into_push_pull_output();
+    let mut spi_csn = pins.gpio17.into_push_pull_output();
     spi_csn.set_high().unwrap();
 
-    let mut spi_ce = pins.gp3.into_push_pull_output();
+    let mut spi_ce = pins.gpio21.into_push_pull_output();
     spi_ce.set_low().unwrap();
 
-    let spi = hal::spi::Spi::<_, _, _, 8>::new(pac.SPI1, (spi_mosi, spi_miso, spi_sclk)).init(
+    let spi = hal::spi::Spi::<_, _, _, 8>::new(pac.SPI0, (spi_mosi, spi_miso, spi_sclk)).init(
         &mut pac.RESETS,
         clocks.peripheral_clock.freq(),
         4.MHz(),
@@ -190,19 +164,6 @@ fn main() -> ! {
         buttons: [0, 0],
     };
 
-    let mut led_wheel = timer.count_down();
-    led_wheel.start(40_u32.millis());
-    let mut led_wheel_counter: u8 = 128;
-    let mut ws = Ws2812::new(
-        // The onboard NeoPixel is attached to GPIO pin #16 on the Feather RP2040.
-        pins.neopixel.into_function(),
-        &mut pio,
-        sm4,
-        clocks.peripheral_clock.freq(),
-        timer.count_down(),
-    );
-    ws.write(brightness(once(led_wheel::wheel(led_wheel_counter)), 128)).unwrap();
-
     loop {
         if check_transmission.wait().is_ok() {
             // 3 because register is a part of transmission, need fix it
@@ -217,7 +178,7 @@ fn main() -> ! {
                             translate_receiver_payload_to_joystick_report([first_byte, second_byte], &mut player_two_report)
                         }
                     };
-                },
+                }
                 None => {} // relies on fact joystick transmits message with neutral state (no button pressed)
             }
 
@@ -237,18 +198,14 @@ fn main() -> ! {
                 }
             }
         }
-
-        if led_wheel.wait().is_ok() {
-            ws.write(brightness(once(led_wheel::wheel(led_wheel_counter)), 128)).unwrap();
-            led_wheel_counter = led_wheel_counter.wrapping_add(1);
-        }
     }
 }
 
 fn translate_receiver_payload_to_joystick_report(payload: [u8; 2], report: &mut JoystickReport) {
     let [byte_one, byte_two] = payload;
 
-    if byte_two == 255 && (byte_one == 0 || byte_one == 128) { // special case, nothing pressed
+    if byte_two == 255 && (byte_one == 0 || byte_one == 128) {
+        // special case, nothing pressed
         report.set_zero();
         return;
     }
@@ -274,7 +231,8 @@ fn translate_receiver_payload_to_joystick_report(payload: [u8; 2], report: &mut 
         _ => {
             defmt::println!(
                 "Impossible combination of directions, should not be happening: {:#010b} {:#010b}",
-                byte_two, directions
+                byte_two,
+                directions
             )
         }
     }
