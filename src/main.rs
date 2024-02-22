@@ -37,13 +37,18 @@ use usbd_hid::hid_class::HIDClass;
 use usdb_joystic_hid_descriptor::JoystickReport;
 
 // Led
+#[cfg(feature = "waveshare-rp2040-zero")]
 use ws2812_pio::Ws2812;
+#[cfg(feature = "waveshare-rp2040-zero")]
 use smart_leds::{brightness, SmartLedsWrite};
+#[cfg(feature = "waveshare-rp2040-zero")]
 use bsp::hal::pio::PIOExt;
+#[cfg(feature = "waveshare-rp2040-zero")]
 use core::iter::once;
+#[cfg(feature = "waveshare-rp2040-zero")]
+mod led_wheel;
 
 mod xn297;
-mod led_wheel;
 
 /// The USB Device Driver (shared with the interrupt).
 static mut USB_DEVICE: Option<UsbDevice<hal::usb::UsbBus>> = None;
@@ -177,12 +182,12 @@ fn main() -> ! {
     let mut player_one_report = JoystickReport {
         x: 0,
         y: 0,
-        buttons: 0,
+        buttons: [0, 0],
     };
     let mut player_two_report = JoystickReport {
         x: 0,
         y: 0,
-        buttons: 0,
+        buttons: [0, 0],
     };
 
     let mut led_wheel = timer.count_down();
@@ -274,18 +279,22 @@ fn translate_receiver_payload_to_joystick_report(payload: [u8; 2], report: &mut 
         }
     }
 
-    // Handle buttons, desired layout in byte A,B,X,Y,Z,C,start,select
-    // Counts from right to left, i.e bit 0 at the end
+    // Handle buttons
+    // Bits in byte counts from right to left, i.e bit 0 at the end
     // 0b00000001 <- bit 0
+    // Final layout is two bytes, due to how start and select buttons are handled in linux kernel (dunno about win)
+    // Button codes are corresponds with linux codes
+    // https://github.com/torvalds/linux/blob/v6.7/include/uapi/linux/input-event-codes.h#L381
 
     // byte one, buttons X,Y,Z,C encoded on bits 3-6 of the first byte
-    let xyzc_buttons = (byte_one & 0b01111000).reverse_bits() << 1;
+    let xy_buttons = (byte_one & 0b01100000).reverse_bits() << 2;
+    let zc_buttons = (byte_one & 0b00011000).reverse_bits() << 3;
 
     // extract A,B,start,select
     let ab_buttons = (!byte_two & 0b11000000).reverse_bits();
-    let start_select_buttons = (!byte_two & 0b00110000) << 2;
+    let start_select_buttons = (!byte_two & 0b00110000).reverse_bits();
 
-    report.buttons = xyzc_buttons | ab_buttons | start_select_buttons
+    report.buttons = [xy_buttons | ab_buttons | zc_buttons, start_select_buttons]
 }
 
 fn push_joystick_report(report: JoystickReport, player: Player) -> Result<usize, UsbError> {
