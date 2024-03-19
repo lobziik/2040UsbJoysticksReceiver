@@ -25,7 +25,6 @@ use hal::clocks::Clock;
 use usb_device::{class_prelude::*, device::UsbRev, prelude::*};
 use usbd_hid::descriptor::SerializedDescriptor;
 use usbd_hid::hid_class::HIDClass;
-use usdb_joystic_hid_descriptor::JoystickReport;
 
 // Led
 use bsp::hal::pio::PIOExt;
@@ -34,6 +33,7 @@ use smart_leds::{brightness, SmartLedsWrite};
 use ws2812_pio::Ws2812;
 mod led_wheel;
 
+mod hid_descriptor;
 mod xn297;
 
 /// The USB Device Driver (shared with the interrupt).
@@ -102,8 +102,8 @@ fn main() -> ! {
         embedded_hal::spi::MODE_0,
     );
 
-    let mut t = xn297::Xn297L::new(spi, spi_csn, spi_ce);
-    t.init().unwrap();
+    let mut transiever = xn297::Xn297L::new(spi, spi_csn, spi_ce);
+    transiever.init().unwrap();
 
     let usb_bus = hal::usb::UsbBus::new(
         pac.USBCTRL_REGS,
@@ -126,8 +126,8 @@ fn main() -> ! {
     let bus_ref = unsafe { USB_BUS.as_ref().unwrap() };
 
     // Set up the USB HID Class Device driver, providing Joystick Report
-    let usb_hid_j1 = HIDClass::new(bus_ref, JoystickReport::desc(), 8);
-    let usb_hid_j2 = HIDClass::new(bus_ref, JoystickReport::desc(), 8);
+    let usb_hid_j1 = HIDClass::new(bus_ref, hid_descriptor::JoystickReport::desc(), 8);
+    let usb_hid_j2 = HIDClass::new(bus_ref, hid_descriptor::JoystickReport::desc(), 8);
     unsafe {
         // Note (safety): This is safe as interrupts haven't been started yet.
         USB_HID_JOY_P1 = Some(usb_hid_j1);
@@ -161,12 +161,12 @@ fn main() -> ! {
     let mut check_transmission = timer.count_down();
     check_transmission.start(5_u32.millis());
 
-    let mut player_one_report = JoystickReport {
+    let mut player_one_report = hid_descriptor::JoystickReport {
         x: 0,
         y: 0,
         buttons: [0, 0],
     };
-    let mut player_two_report = JoystickReport {
+    let mut player_two_report = hid_descriptor::JoystickReport {
         x: 0,
         y: 0,
         buttons: [0, 0],
@@ -189,7 +189,7 @@ fn main() -> ! {
     loop {
         if check_transmission.wait().is_ok() {
             // 3 because register is a part of transmission, need fix it
-            if let Some(payload) = t.read_rx_payload::<3>().unwrap() {
+            if let Some(payload) = transiever.read_rx_payload::<3>().unwrap() {
                 let [_, first_byte, second_byte] = payload;
                 match first_byte & (1 << 7) > 0 {
                     false => {
@@ -234,7 +234,10 @@ fn main() -> ! {
     }
 }
 
-fn translate_receiver_payload_to_joystick_report(payload: [u8; 2], report: &mut JoystickReport) {
+fn translate_receiver_payload_to_joystick_report(
+    payload: [u8; 2],
+    report: &mut hid_descriptor::JoystickReport,
+) {
     let [byte_one, byte_two] = payload;
 
     if byte_two == 255 && (byte_one == 0 || byte_one == 128) {
@@ -315,7 +318,10 @@ fn translate_receiver_payload_to_joystick_report(payload: [u8; 2], report: &mut 
     report.buttons = [xy_buttons | ab_buttons | zc_buttons, start_select_buttons]
 }
 
-fn push_joystick_report(report: JoystickReport, player: Player) -> Result<usize, UsbError> {
+fn push_joystick_report(
+    report: hid_descriptor::JoystickReport,
+    player: Player,
+) -> Result<usize, UsbError> {
     critical_section::with(|_| unsafe {
         match player {
             Player::One => USB_HID_JOY_P1.as_mut().map(|hid| hid.push_input(&report)),

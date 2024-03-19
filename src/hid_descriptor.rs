@@ -1,5 +1,3 @@
-#![no_std]
-
 use serde::ser::{Serialize, SerializeTuple, Serializer};
 use usbd_hid::descriptor::AsInputReport;
 use usbd_hid::descriptor::SerializedDescriptor;

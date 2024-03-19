@@ -402,10 +402,11 @@ dependencies = [
  "heapless 0.8.0",
  "nb 1.1.0",
  "panic-halt",
+ "serde",
  "smart-leds",
  "usb-device",
  "usbd-hid",
- "usdb-joystic-hid-descriptor",
+ "usbd-hid-macros",
  "waveshare-rp2040-zero",
  "ws2812-pio",
 ]
@@ -756,15 +757,6 @@ dependencies = [
  "serde",
  "syn 1.0.109",
  "usbd-hid-descriptors",
-]
-
-[[package]]
-name = "usdb-joystic-hid-descriptor"
-version = "0.1.0"
-dependencies = [
- "serde",
- "usbd-hid",
- "usbd-hid-macros",
 ]
 
 [[package]]
