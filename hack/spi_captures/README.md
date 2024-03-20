@@ -1,6 +1,6 @@
 # SPI captures
 
-SPI communication captures made with [Saleae Logic2](https://www.saleae.com/pages/downloads).
+SPI communication captures made with cheap logic analyzer compatible with [Saleae Logic2](https://www.saleae.com/pages/downloads).
 
 Explored chip is Panchip XN297LBW which uses only 3 pins for spi communication. 
 
