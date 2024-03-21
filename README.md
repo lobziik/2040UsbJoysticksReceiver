@@ -24,6 +24,6 @@ There are some minor differences between these boards, mainly in pin layout.
 - ~~SPI communication with xn297l~~
 - ~~Translation of bytes coming from spi to properly formed `JoystickReport` struct~~
 - Write up an article describing entire adventure
-  - add logic2 plugin there
+  - ~~add logic2 plugin there~~
   - ~~add arduino c++ version of xn297l polling firmware~~
   - pictures? 

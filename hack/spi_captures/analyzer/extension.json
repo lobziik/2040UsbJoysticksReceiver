@@ -1,0 +1,13 @@
+{
+  "name": "XN297LBWCommunication",
+  "apiVersion": "1.0.0",
+  "author": "lobziik",
+  "version": "0.0.1",
+  "description": "Interprets XN297LBW according to datasheet into human readable format",
+  "extensions": {
+    "XN297LBWCommunication": {
+      "type": "HighLevelAnalyzer",
+      "entryPoint": "HighLevelAnalyzer.Hla"
+    }
+  }
+}
